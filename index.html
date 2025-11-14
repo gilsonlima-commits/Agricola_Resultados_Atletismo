@@ -155,9 +155,33 @@
         // Define o nível de log para debug
         setLogLevel('Debug');
 
-        // Variáveis globais (disponíveis no ambiente Canvas)
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+
+        // ==============================================================================
+        // 🚨 BLOCO CRÍTICO DE CONFIGURAÇÃO DO FIREBASE PARA USO EXTERNO (GitHub/Google Sites) 🚨
+        //
+        // Você DEVE preencher o objeto abaixo com as credenciais do seu próprio projeto
+        // Firebase. Obtenha estes dados na configuração do seu projeto Firebase.
+        // Se você não preencher este bloco, o aplicativo NÃO funcionará.
+        // ==============================================================================
+        const FIREBASE_CONFIG_PLACEHOLDER = {
+            apiKey: "SUA_API_KEY_AQUI", // Ex: "AIzaSy..."
+            authDomain: "SEU_PROJETO.firebaseapp.com",
+            projectId: "SEU_PROJECT_ID", // Ex: "seu-projeto-12345"
+            storageBucket: "SEU_PROJETO.appspot.com",
+            messagingSenderId: "SEU_MESSAGING_ID",
+            appId: "SEU_APP_ID"
+        };
+        // ==============================================================================
+
+        
+        // As variáveis abaixo tentam usar as credenciais do ambiente de desenvolvimento (Canvas),
+        // mas usam o FIREBASE_CONFIG_PLACEHOLDER como fallback para uso externo.
+        const firebaseConfig = (typeof __firebase_config !== 'undefined' && JSON.parse(__firebase_config).projectId) 
+            ? JSON.parse(__firebase_config) 
+            : FIREBASE_CONFIG_PLACEHOLDER; 
+            
+        // Para a URL da coleção, usamos o appId do Canvas ou o projectId da sua configuração.
+        const effectiveAppId = typeof __app_id !== 'undefined' ? __app_id : firebaseConfig.projectId || 'default-app-id';
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         let db = null;
@@ -165,8 +189,8 @@
         let isAuthReady = false;
         let currentUserId = null;
 
-        // URL da coleção pública para resultados de atletismo
-        const COLLECTION_PATH = `/artifacts/${appId}/public/data/athletic_results`;
+        // URL da coleção pública para resultados de atletismo. Usa o ID determinado acima.
+        const COLLECTION_PATH = `/artifacts/${effectiveAppId}/public/data/athletic_results`;
 
         // Função para mostrar mensagens de feedback customizadas
         function showMessageBox(message, type = 'success') {
@@ -200,9 +224,9 @@
          */
         async function initializeFirebase() {
             try {
-                // VERIFICAÇÃO ADICIONAL PARA CONFIGURAÇÃO AUSENTE/INVÁLIDA
-                if (!firebaseConfig || !firebaseConfig.projectId) {
-                    throw new Error("A configuração do Firebase (API Key, Project ID, etc.) está ausente ou inválida. Certifique-se de que o ambiente está fornecendo as credenciais corretas.");
+                // VERIFICAÇÃO CRÍTICA: Se o projeto ID ainda for o placeholder, ele falhará
+                if (!firebaseConfig || firebaseConfig.projectId === "SEU_PROJECT_ID") {
+                    throw new Error("A configuração do Firebase está ausente. Por favor, preencha o bloco 'FIREBASE_CONFIG_PLACEHOLDER' no código com as credenciais do seu projeto Firebase.");
                 }
 
                 const app = initializeApp(firebaseConfig);
@@ -210,7 +234,6 @@
                 db = getFirestore(app);
 
                 // 1. Configura o Listener ANTES de tentar o login.
-                // O Listener irá capturar o estado de autenticação (logado/deslogado) após as tentativas abaixo.
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         currentUserId = user.uid;
@@ -221,22 +244,21 @@
                         currentUserId = null;
                         isAuthReady = false;
                         console.log("Firebase Auth listener: No user signed in.");
-                        // Não tentamos signInAnonymously aqui, pois a lógica de sign-in inicial (passo 2) já cuidou disso.
                     }
                 });
 
                 // 2. Inicia o processo de Sign-in (Custom ou Anônimo)
-                // Usamos await para garantir que a autenticação seja tentada antes que o listener seja acionado pela primeira vez.
                 if (initialAuthToken) {
                     await signInWithCustomToken(auth, initialAuthToken);
                     console.log("Autenticação com token customizado bem-sucedida.");
                 } else {
+                    // Para uso em ambientes externos, geralmente usamos o login anônimo
                     await signInAnonymously(auth);
                     console.log("Autenticação anônima padrão acionada.");
                 }
             } catch (error) {
                 console.error("Erro na inicialização ou autenticação do Firebase:", error);
-                // Exibe a mensagem de erro detalhada, incluindo a nova verificação de API Key/Config
+                // Exibe a mensagem de erro detalhada
                 showMessageBox("Erro crítico de conexão/autenticação: " + error.message, 'error');
             }
         }
@@ -249,7 +271,7 @@
             event.preventDefault();
             
             if (!db || !isAuthReady) {
-                showMessageBox("O banco de dados não está pronto. Tente novamente em instantes.", 'error');
+                showMessageBox("O banco de dados não está pronto ou o usuário não está autenticado. Tente novamente em instantes.", 'error');
                 return;
             }
 
