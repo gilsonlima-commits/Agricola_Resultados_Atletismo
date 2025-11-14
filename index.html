@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CEEP Agrícola da Lapa - Resultados Atletismo Oficial</title>
+
+    <!-- DataTables + Buttons -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.dataTables.min.css">
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- jQuery + DataTables -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
+
+    <!-- CSS personalizado -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+    <h1 style="text-align:center; color:#000000;">CEEP Agrícola da Lapa</h1>
+    <h2 style="text-align:center; color:#0000FF;">Resultados de Atletismo Oficial</h2>
+
+    <div class="container">
+        <h3 style="color:#000000;">Tabela Oficial de Resultados</h3>
+
+        <!-- FILTROS -->
+        <label>Filtrar por Atleta:</label>
+        <select id="filtroAtleta"></select>
+
+        <label>Prova:</label>
+        <select id="filtroProva"></select>
+
+        <label>Categoria:</label>
+        <select id="filtroCategoria"></select>
+
+        <label>Sexo:</label>
+        <select id="filtroSexo"></select>
+
+        <hr>
+
+        <!-- TABELA -->
+        <table id="tabelaResultados" class="display" style="width:100%">
+            <thead>
+                <tr>
+                    <th>ATLETA</th>
+                    <th>COMPETICAO</th>
+                    <th>DATA</th>
+                    <th>PROVA</th>
+                    <th>MARCA</th>
+                    <th>CLASSIFICACAO</th>
+                    <th>CATEGORIA</th>
+                    <th>SEXO</th>
+                    <th>OBS</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <hr>
+
+    <!-- ============================ -->
+    <!-- GRÁFICOS                     -->
+    <!-- ============================ -->
+
+    <h2>Evolução por Categoria</h2>
+    <canvas id="graficoCategoria" height="120"></canvas>
+
+    <h2>Distribuição por Sexo</h2>
+    <canvas id="graficoSexo" height="120"></canvas>
+
+    <h2>Participação por Competição</h2>
+    <canvas id="graficoParticipacao" height="120"></canvas>
+
+    <h2>Comparação de Atletas na Mesma Prova</h2>
+    <canvas id="graficoComparacao" height="120"></canvas>
+
+    <h2>Evolução dos Recordes da Equipe por Prova</h2>
+    <canvas id="graficoRecordes" height="120"></canvas>
+
+    <h2>Ranking Geral (Melhor Marca por Atleta)</h2>
+    <canvas id="graficoRankingGeral" height="120"></canvas>
+
+    <h2>Top 10 Histórico</h2>
+    <canvas id="graficoTop10" height="120"></canvas>
+
+    <!-- ============================ -->
+    <!-- CARREGAR DADOS + GRÁFICOS   -->
+    <!-- ============================ -->
+
+    <script>
+        function parseMarca(m) {
+            return parseFloat(m.replace(",", "."));
+        }
+
+        fetch("data/resultados.json")
+            .then(r => r.json())
+            .then(data => {
+                montarTabela(data);
+                popularFiltros(data);
+
+                graficoCategoria(data);
+                graficoSexo(data);
+                graficoParticipacao(data);
+                graficoComparacaoProva(data);
+                graficoRecordes(data);
+
+                gerarRankingGeral(data);
+                gerarTop10(data);
+            });
+
+        /* =========================
+           TABELA DINÂMICA
+        ========================== */
+        function montarTabela(data) {
+            $("#tabelaResultados").DataTable({
+                data: data,
+                columns: [
+                    { data: "ATLETA" },
+                    { data: "COMPETICAO" },
+                    { data: "DATA" },
+                    { data: "PROVA" },
+                    { data: "MARCA" },
+                    { data: "CLASSIFICACAO" },
+                    { data: "CATEGORIA" },
+                    { data: "SEXO" },
+                    { data: "OBS" }
+                ],
+                dom: "Bfrtip",
+                buttons: ["excel", "pdf"],
+            });
+        }
+
+        /* =========================
+           FILTROS
+        ========================== */
+        function popularFiltros(data) {
+            preencher("filtroAtleta", [...new Set(data.map(r => r.ATLETA))]);
+            preencher("filtroProva", [...new Set(data.map(r => r.PROVA))]);
+            preencher("filtroCategoria", [...new Set(data.map(r => r.CATEGORIA))]);
+            preencher("filtroSexo", [...new Set(data.map(r => r.SEXO))]);
+        }
+
+        function preencher(id, valores) {
+            const select = document.getElementById(id);
+            select.innerHTML = `<option value="">Todos</option>`;
+            valores.forEach(v => {
+                select.innerHTML += `<option>${v}</option>`;
+            });
+        }
+
+        /* =========================
+            GRÁFICOS
+        ========================== */
+
+        function graficoCategoria(data) {
+            const categorias = {};
+            data.forEach(r => {
+                if (!categorias[r.CATEGORIA]) categorias[r.CATEGORIA] = [];
+                categorias[r.CATEGORIA].push(parseMarca(r.MARCA));
+            });
+
+            new Chart(graficoCategoria, {
+                type: "bar",
+                data: {
+                    labels: Object.keys(categorias),
+                    datasets: [{
+                        label: "Média por Categoria",
+                        data: Object.values(categorias).map(arr => arr.reduce((a, b) => a + b) / arr.length)
+                    }]
+                }
+            });
+        }
+
+        function graficoSexo(data) {
+            const cont = { Masculino: 0, Feminino: 0 };
+            data.forEach(r => cont[r.SEXO]++);
+
+            new Chart(graficoSexo, {
+                type: "pie",
+                data: {
+                    labels: ["Masculino", "Feminino"],
+                    datasets: [{ data: [cont.Masculino, cont.Feminino] }]
+                }
+            });
+        }
+
+        function graficoParticipacao(data) {
+            const comp = {};
+            data.forEach(r => {
+                if (!comp[r.COMPETICAO]) comp[r.COMPETICAO] = 0;
+                comp[r.COMPETICAO]++;
+            });
+
+            new Chart(graficoParticipacao, {
+                type: "bar",
+                data: {
+                    labels: Object.keys(comp),
+                    datasets: [{ label: "Participações", data: Object.values(comp) }]
+                }
+            });
+        }
+
+        function graficoComparacaoProva(data) {
+            const provas = {};
+            data.forEach(r => {
+                if (!provas[r.PROVA]) provas[r.PROVA] = [];
+                provas[r.PROVA].push({ atleta: r.ATLETA, marca: parseMarca(r.MARCA) });
+            });
+
+            const prova = Object.keys(provas)[0];
+            new Chart(graficoComparacao, {
+                type: "bar",
+                data: {
+                    labels: provas[prova].map(e => e.atleta),
+                    datasets: [{ label: `Prova: ${prova}`, data: provas[prova].map(e => e.marca) }]
+                }
+            });
+        }
+
+        function graficoRecordes(data) {
+            const provas = {};
+            data.forEach(r => {
+                if (!provas[r.PROVA]) provas[r.PROVA] = [];
+                provas[r.PROVA].push(parseMarca(r.MARCA));
+            });
+
+            new Chart(graficoRecordes, {
+                type: "line",
+                data: {
+                    labels: Object.keys(provas),
+                    datasets: [{ label: "Recorde da Prova", data: Object.values(provas).map(v => Math.min(...v)) }]
+                }
+            });
+        }
+
+        function gerarRankingGeral(data) {
+            const melhores = {};
+            data.forEach(r => {
+                const marca = parseMarca(r.MARCA);
+                if (!melhores[r.ATLETA] || marca < melhores[r.ATLETA]) melhores[r.ATLETA] = marca;
+            });
+
+            new Chart(graficoRankingGeral, {
+                type: "bar",
+                data: {
+                    labels: Object.keys(melhores),
+                    datasets: [{ label: "Melhor Marca Geral", data: Object.values(melhores) }]
+                }
+            });
+        }
+
+        function gerarTop10(data) {
+            const lista = data.map(r => ({
+                atleta: r.ATLETA,
+                prova: r.PROVA,
+                marca: parseMarca(r.MARCA)
+            }));
+
+            lista.sort((a, b) => a.marca - b.marca);
+            const top = lista.slice(0, 10);
+
+            new Chart(graficoTop10, {
+                type: "line",
+                data: {
+                    labels: top.map(i => i.atleta + " (" + i.prova + ")"),
+                    datasets: [{ label: "Top 10 Histórico", data: top.map(i => i.marca) }]
+                }
+            });
+        }
+    </script>
+
+</body>
+</html>
